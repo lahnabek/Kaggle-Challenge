@@ -1,0 +1,8 @@
+# PyTorch checkpoints
+*.pth
+
+# Tabular outputs / submissions
+*.csv
+
+# HDF5 datasets
+*.h5
