@@ -56,7 +56,7 @@ Ce README explique rapidement a quoi sert chaque notebook du depot pour que ce s
 - C'est ici qu'on va travailler, tester et faire evoluer la solution.
 - C'est un "experiment runner" centre sur DINOv2 + adapters.
 - Organisation du notebook:
-  - imports, chemins et utilitaires;
+  - imports (`utils/constants.py` pour device et chemins H5 par defaut, puis config et lancement);
   - bloc config (section a modifier en priorite pour lancer des experiences);
   - dataset + preprocessing;
   - construction du modele (backbone gele + adapter optionnel + tete de classification);

@@ -6,3 +6,6 @@
 
 # HDF5 datasets
 *.h5
+
+runs/
+outliers_outputs/
