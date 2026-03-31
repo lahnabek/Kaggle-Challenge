@@ -150,33 +150,69 @@ class PreprocessingTransform:
     def __init__(self, cfg: ProcessingConfig) -> None:
         self.cfg = cfg
         self._resize = transforms.Resize(cfg.resize_hw)
-        self._norm = (
-            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            if bool(cfg.imagenet_normalize)
-            else None
-        )
+        self._norm = None
+        if bool(cfg.imagenet_normalize):
+            self._norm = transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
         self._sklearn = (
             SklearnLikeTransform(cfg.sklearn_transformer) if cfg.sklearn_transformer is not None else None
         )
 
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        y = self._resize(x)
+    def _postprocess(self, y: torch.Tensor) -> torch.Tensor:
+        """Cast/scale/norm/sklearn on a single (C,H,W) view."""
         if self.cfg.cast_float32:
             y = y.float()
+            if y.numel() > 0 and float(y.max()) > 1.5:
+                y = y / 255.0
         if self._norm is not None:
             y = self._norm(y)
-
-        if self.cfg.extra_transform is not None:
-            y_np = y.detach().cpu().numpy().astype(np.float32)
-            y_np = self.cfg.extra_transform(y_np)
-            y = torch.tensor(y_np, dtype=torch.float32)
-
         if self._sklearn is not None:
             y_np = y.detach().cpu().numpy().astype(np.float32)
             y_np = self._sklearn(y_np)
             y = torch.tensor(y_np, dtype=torch.float32)
-
         return y
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        base = self._resize(x)
+
+        k = int(getattr(getattr(self.cfg, "augmentation", None), "k_aug_views", 0) or 0)
+        include_orig = bool(getattr(getattr(self.cfg, "augmentation", None), "include_original", True))
+
+        # Single-view path (fast).
+        if k <= 0:
+            y = base
+            if self.cfg.extra_transform is not None:
+                y_np = y.detach().cpu().numpy()
+                y_np = self.cfg.extra_transform(y_np)
+                y = torch.tensor(y_np)
+            return self._postprocess(y)
+
+        # Multi-view: (V,C,H,W) where V = include_original + k
+        views = []
+        if include_orig:
+            views.append(self._postprocess(base.clone()))
+
+        if self.cfg.extra_transform is None:
+            # If no augmenter provided, just repeat the original.
+            while len(views) < (int(include_orig) + k):
+                views.append(self._postprocess(base.clone()))
+            return torch.stack(views, 0)
+
+        for _ in range(k):
+            y_np = base.detach().cpu().numpy()
+            y_np = self.cfg.extra_transform(y_np)
+            y = torch.tensor(y_np)
+            views.append(self._postprocess(y))
+
+        return torch.stack(views, 0)
+
+
+def uniform_center_proportions(centers: List[int]) -> Dict[int, float]:
+    """Uniform proportions over observed non-negative centers (for balanced batches)."""
+    uniq = sorted({int(c) for c in centers if int(c) >= 0})
+    if not uniq:
+        return {}
+    p = 1.0 / float(len(uniq))
+    return {int(c): float(p) for c in uniq}
 
 
 def build_preprocessing(cfg: ProcessingConfig) -> PreprocessingTransform:
