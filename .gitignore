@@ -10,5 +10,5 @@
 runs/
 outliers_outputs/
 pathology-he-auto-augment/
-
-token.md
+.claude/
+token.md.claude/
