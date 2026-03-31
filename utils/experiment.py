@@ -16,13 +16,14 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from utils.common import ensure_dir, safe_json, seed_everything
-from utils.config import ModuleSpec, RunConfig, save_run_config
+from utils.config import ModuleSpec, RunConfig, processing_allows_embedding_precompute, save_run_config
 from utils.data import (
     CenterProportionalBatchSampler,
     EmbeddingTensorDataset,
     EmbeddingValDataset,
     H5BinaryDataset,
     build_preprocessing,
+    uniform_center_proportions,
 )
 from utils.constants import DEVICE, RUNS_DIR, TEST_IMAGES_PATH, TRAIN_IMAGES_PATH, VAL_IMAGES_PATH
 from utils.model import (
@@ -76,6 +77,7 @@ def precompute_backbone_features(
     backbone: nn.Module,
     device: torch.device,
     desc: str = "precompute_embeddings",
+    use_fp16: bool = False,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """One forward per batch; skip backbone on outlier rows (``is_out`` True). Returns CPU tensors."""
     backbone.eval()
@@ -92,7 +94,12 @@ def precompute_backbone_features(
             io = io.to(device).bool()
             z = torch.zeros(x.shape[0], nf, device=device, dtype=torch.float32)
             if (~io).any():
-                z[~io] = backbone(x[~io])
+                use_amp = bool(use_fp16) and device.type == "cuda"
+                if use_amp:
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
+                        z[~io] = backbone(x[~io])
+                else:
+                    z[~io] = backbone(x[~io])
             zs.append(z.cpu())
             ys.append(y.float())
             cs.append(c.long())
@@ -106,8 +113,12 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
     ensure_dir(base_run_dir)
     save_run_config(run_cfg, base_run_dir)
 
-    transform = build_preprocessing(run_cfg.processing)
+    # Train-only augmentation: use `processing.extra_transform` for train, but disable it for val/test.
+    transform_train = build_preprocessing(run_cfg.processing)
+    processing_eval = replace(run_cfg.processing, extra_transform=None)
+    transform_eval = build_preprocessing(processing_eval)
     seed_results = []
+    emb_precompute_ok = processing_allows_embedding_precompute(run_cfg.processing)
 
     for seed in run_cfg.seeds:
         seed_everything(int(seed))
@@ -122,8 +133,8 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
         ensure_dir(ckpt_dir)
         ensure_dir(curves_dir)
 
-        train_probe = H5BinaryDataset(TRAIN_IMAGES_PATH, transform=transform, mode="train")
-        val_probe = H5BinaryDataset(VAL_IMAGES_PATH, transform=transform, mode="val")
+        train_probe = H5BinaryDataset(TRAIN_IMAGES_PATH, transform=transform_eval, mode="train")
+        val_probe = H5BinaryDataset(VAL_IMAGES_PATH, transform=transform_eval, mode="val")
         train_ids = list(train_probe.image_ids)
         val_ids = list(val_probe.image_ids)
 
@@ -159,10 +170,10 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
         if len(train_ids) == 0:
             raise RuntimeError("No training patches left after outlier filter / subsampling.")
 
-        train_ds = H5BinaryDataset(TRAIN_IMAGES_PATH, transform=transform, mode="train", subset_ids=train_ids)
+        train_ds = H5BinaryDataset(TRAIN_IMAGES_PATH, transform=transform_train, mode="train", subset_ids=train_ids)
         val_ds = H5BinaryDataset(
             VAL_IMAGES_PATH,
-            transform=transform,
+            transform=transform_eval,
             mode="val",
             outlier_ids=val_outlier_ids,
             subset_ids=val_ids,
@@ -170,7 +181,9 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
         train_centers = _load_centers_from_h5(TRAIN_IMAGES_PATH, train_ids)
         centers_in_train = sorted(list(set(int(c) for c in train_centers if int(c) >= 0)))
 
-        use_precompute = not run_cfg.model.adapter.enabled
+        # Precompute embeddings only for linear probing (no adapter), and only when
+        # augmentations are absent, jitter-only, or otherwise marked as cacheable.
+        use_precompute = (not run_cfg.model.adapter.enabled) and emb_precompute_ok
 
         val_loader_img = DataLoader(
             val_ds,
@@ -196,12 +209,14 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
                 backbone_enc,
                 DEVICE,
                 desc=f"precompute train seed={seed}",
+                use_fp16=bool(run_cfg.model.use_fp16),
             )
             z_va, y_va, c_va, io_va = precompute_backbone_features(
                 val_loader_img,
                 backbone_enc,
                 DEVICE,
                 desc=f"precompute val seed={seed}",
+                use_fp16=bool(run_cfg.model.use_fp16),
             )
             del backbone_enc
             if torch.cuda.is_available():
@@ -210,11 +225,15 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
             train_emb = EmbeddingTensorDataset(z_tr, y_tr, c_tr)
             val_emb = EmbeddingValDataset(z_va, y_va, c_va, io_va)
 
+            # Build the clean-batch sampler (center-balanced or simple shuffle).
             if run_cfg.train.use_center_balanced_batches:
                 proportions = run_cfg.train.center_proportions
                 if proportions is None:
-                    proportions = _estimate_center_proportions(train_centers)
-                batch_sampler = CenterProportionalBatchSampler(
+                    if str(run_cfg.train.center_sampling).lower() == "uniform":
+                        proportions = uniform_center_proportions(train_centers)
+                    else:
+                        proportions = _estimate_center_proportions(train_centers)
+                clean_batch_sampler: Sampler[List[int]] = CenterProportionalBatchSampler(
                     centers=train_centers,
                     batch_size=run_cfg.train.batch_size,
                     proportions=proportions,
@@ -222,15 +241,17 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
                     drop_last=run_cfg.train.drop_last,
                     seed=int(seed),
                 )
-                train_loader = DataLoader(train_emb, batch_sampler=batch_sampler, num_workers=0)
             else:
-                train_loader = DataLoader(
-                    train_emb,
+                # Simple shuffled batches over indices.
+                from torch.utils.data import BatchSampler, RandomSampler
+
+                clean_batch_sampler = BatchSampler(
+                    RandomSampler(range(len(train_emb))),
                     batch_size=run_cfg.train.batch_size,
-                    shuffle=True,
-                    num_workers=0,
                     drop_last=run_cfg.train.drop_last,
                 )
+
+            train_loader = DataLoader(train_emb, batch_sampler=clean_batch_sampler, num_workers=0)
             val_loader = DataLoader(
                 val_emb,
                 batch_size=run_cfg.train.batch_size,
@@ -246,12 +267,15 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
                 torch.cuda.empty_cache()
             head = build_binary_head(run_cfg.model, in_dim=in_dim)
             model = HeadOnly(head).to(DEVICE)
-            ckpt_extra = {"head_only": True, "backbone_name": run_cfg.model.backbone_name}
+            ckpt_extra = {"head_only": True, "backbone_name": run_cfg.model.backbone_name, **ckpt_extra}
         else:
             if run_cfg.train.use_center_balanced_batches:
                 proportions = run_cfg.train.center_proportions
                 if proportions is None:
-                    proportions = _estimate_center_proportions(train_centers)
+                    if str(run_cfg.train.center_sampling).lower() == "uniform":
+                        proportions = uniform_center_proportions(train_centers)
+                    else:
+                        proportions = _estimate_center_proportions(train_centers)
                 batch_sampler = CenterProportionalBatchSampler(
                     centers=train_centers,
                     batch_size=run_cfg.train.batch_size,
@@ -291,6 +315,7 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
             "outlier_filter": run_cfg.outlier_params is not None,
             "data_fraction": run_cfg.data_fraction,
             "precomputed_embeddings": use_precompute,
+            "embedding_precompute_allowed": emb_precompute_ok,
             "resize_hw": f"{run_cfg.processing.resize_hw[0]}x{run_cfg.processing.resize_hw[1]}",
             "adapter_enabled": bool(run_cfg.model.adapter.enabled),
             "adapter_cls": safe_json(run_cfg.model.adapter.module_cls),
@@ -371,7 +396,7 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
             predict_test(
                 run_dir,
                 infer_model,
-                transform,
+                transform_eval,
                 threshold=run_cfg.predict_threshold,
                 test_outlier_ids=test_outlier_ids,
                 subset_ids=test_subset,

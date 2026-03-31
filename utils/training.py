@@ -194,8 +194,17 @@ class Trainer:
                     center = torch.full((x.shape[0],), -1, dtype=torch.long)
                     is_out = torch.zeros(x.shape[0], dtype=torch.bool, device=DEVICE)
 
+                # Support multi-view inputs: (B,V,C,H,W) -> flatten to (B*V,C,H,W)
+                if isinstance(x, torch.Tensor) and x.ndim == 5:
+                    b, v = int(x.shape[0]), int(x.shape[1])
+                    x = x.reshape(b * v, *x.shape[2:])
+                    y = y.view(-1).repeat_interleave(v)
+                    center = center.view(-1).repeat_interleave(v)
+                    is_out = is_out.view(-1).repeat_interleave(v)
+
                 x = x.to(DEVICE)
                 y = y.to(DEVICE).view(-1).float()
+                center = center.to(DEVICE).view(-1).long()
 
                 if train:
                     self.optimizer.zero_grad(set_to_none=True)

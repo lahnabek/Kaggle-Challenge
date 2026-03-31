@@ -58,8 +58,15 @@ def predict_test(
             if is_out:
                 prob = 0.0
             else:
-                logits = model(x)
-                prob = torch.sigmoid(logits).item()
+                # Multi-view support: (1,V,C,H,W) -> mean prob over views.
+                if isinstance(x, torch.Tensor) and x.ndim == 5:
+                    b, v = int(x.shape[0]), int(x.shape[1])
+                    x2 = x.reshape(b * v, *x.shape[2:])
+                    logits = model(x2).view(b, v, -1)
+                    prob = torch.sigmoid(logits).mean().item()
+                else:
+                    logits = model(x)
+                    prob = torch.sigmoid(logits).item()
             rows.append({"ID": int(img_id.item()), "Pred": int(prob > threshold)})
 
     out = pd.DataFrame(rows).set_index("ID")

@@ -1,0 +1,13 @@
+numpy>=1.23
+pandas>=1.5
+tqdm>=4.66
+h5py>=3.8
+pillow>=9.5
+scikit-learn>=1.2
+
+# Backbones from Hugging Face via timm
+timm>=0.9.11
+huggingface_hub>=0.20
+
+# Note: torch / torchvision are preinstalled on Colab (GPU builds).
+# If you run outside Colab, install them separately following https://pytorch.org/get-started/locally/
