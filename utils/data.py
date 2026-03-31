@@ -150,6 +150,11 @@ class PreprocessingTransform:
     def __init__(self, cfg: ProcessingConfig) -> None:
         self.cfg = cfg
         self._resize = transforms.Resize(cfg.resize_hw)
+        self._norm = (
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+            if bool(cfg.imagenet_normalize)
+            else None
+        )
         self._sklearn = (
             SklearnLikeTransform(cfg.sklearn_transformer) if cfg.sklearn_transformer is not None else None
         )
@@ -158,6 +163,8 @@ class PreprocessingTransform:
         y = self._resize(x)
         if self.cfg.cast_float32:
             y = y.float()
+        if self._norm is not None:
+            y = self._norm(y)
 
         if self.cfg.extra_transform is not None:
             y_np = y.detach().cpu().numpy().astype(np.float32)

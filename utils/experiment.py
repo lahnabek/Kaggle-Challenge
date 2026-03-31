@@ -76,6 +76,7 @@ def precompute_backbone_features(
     backbone: nn.Module,
     device: torch.device,
     desc: str = "precompute_embeddings",
+    use_fp16: bool = False,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """One forward per batch; skip backbone on outlier rows (``is_out`` True). Returns CPU tensors."""
     backbone.eval()
@@ -92,7 +93,12 @@ def precompute_backbone_features(
             io = io.to(device).bool()
             z = torch.zeros(x.shape[0], nf, device=device, dtype=torch.float32)
             if (~io).any():
-                z[~io] = backbone(x[~io])
+                use_amp = bool(use_fp16) and device.type == "cuda"
+                if use_amp:
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
+                        z[~io] = backbone(x[~io])
+                else:
+                    z[~io] = backbone(x[~io])
             zs.append(z.cpu())
             ys.append(y.float())
             cs.append(c.long())
@@ -196,12 +202,14 @@ def run_experiment(run_cfg: RunConfig) -> Dict[str, Any]:
                 backbone_enc,
                 DEVICE,
                 desc=f"precompute train seed={seed}",
+                use_fp16=bool(run_cfg.model.use_fp16),
             )
             z_va, y_va, c_va, io_va = precompute_backbone_features(
                 val_loader_img,
                 backbone_enc,
                 DEVICE,
                 desc=f"precompute val seed={seed}",
+                use_fp16=bool(run_cfg.model.use_fp16),
             )
             del backbone_enc
             if torch.cuda.is_available():

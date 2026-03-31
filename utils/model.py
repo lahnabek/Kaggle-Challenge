@@ -1,8 +1,8 @@
-"""Frozen DINOv2 backbone, default adapter/head, and full model assembly."""
+"""Frozen backbones (DINOv2 / HF timm), default adapter/head, and full model assembly."""
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 import torch
 import torch.nn as nn
@@ -11,14 +11,101 @@ from utils.config import ModelConfig
 from utils.constants import DEVICE
 
 
-def load_frozen_backbone(backbone_name: str, device: Optional[torch.device] = None) -> nn.Module:
-    """Load a DINOv2 backbone from torch.hub and freeze parameters."""
-    dev = device or DEVICE
-    backbone = torch.hub.load("facebookresearch/dinov2", backbone_name).to(dev)
-    backbone.eval()
-    for p in backbone.parameters():
+class Virchow2Wrapper(nn.Module):
+    """Wrap Virchow2 timm model to return a single embedding per image."""
+
+    def __init__(self, base: nn.Module, pool: Literal["cls", "cls_mean"]) -> None:
+        super().__init__()
+        self.base = base
+        self.pool = pool
+        if pool == "cls":
+            self.num_features = 1280
+        elif pool == "cls_mean":
+            self.num_features = 2560
+        else:
+            raise ValueError(f"Unknown Virchow2 pooling mode: {pool!r}")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.base(x)  # expected (B, T, 1280)
+        cls = out[:, 0]
+        if self.pool == "cls":
+            return cls
+        patch = out[:, 5:]  # skip register tokens 1-4
+        return torch.cat([cls, patch.mean(1)], dim=-1)
+
+
+def _freeze(m: nn.Module) -> nn.Module:
+    m.eval()
+    for p in m.parameters():
         p.requires_grad = False
-    return backbone
+    return m
+
+
+def load_frozen_backbone(backbone_name: str, device: Optional[torch.device] = None) -> nn.Module:
+    """Load a frozen backbone.
+
+    Supported values:
+    - DINOv2 via torch.hub: e.g. "dinov2_vits14"
+    - timm/HF: "uni", "uni2_h", "virchow2_cls", "virchow2_clsmean"
+    """
+    dev = device or DEVICE
+
+    if backbone_name.startswith("dinov2_"):
+        backbone = torch.hub.load("facebookresearch/dinov2", backbone_name).to(dev)
+        return _freeze(backbone)
+
+    if backbone_name == "uni":
+        import timm
+
+        backbone = timm.create_model(
+            "hf-hub:MahmoodLab/uni",
+            pretrained=True,
+            num_classes=0,
+            init_values=1e-5,
+            dynamic_img_size=True,
+        ).to(dev)
+        return _freeze(backbone)
+
+    if backbone_name == "uni2_h":
+        import timm
+        import torch as _torch
+
+        # Parameters adapted from the UNI2-h reference recipe (kept explicit on purpose).
+        backbone = timm.create_model(
+            "hf-hub:MahmoodLab/UNI2-h",
+            pretrained=True,
+            num_classes=0,
+            img_size=224,
+            patch_size=14,
+            depth=24,
+            num_heads=24,
+            embed_dim=1536,
+            mlp_ratio=2.66667 * 2,
+            init_values=1e-5,
+            no_embed_class=True,
+            reg_tokens=8,
+            dynamic_img_size=True,
+            mlp_layer=timm.layers.SwiGLUPacked,
+            act_layer=_torch.nn.SiLU,
+        ).to(dev)
+        return _freeze(backbone)
+
+    if backbone_name in ("virchow2_cls", "virchow2_clsmean"):
+        import timm
+        import torch as _torch
+        from timm.layers import SwiGLUPacked
+
+        base = timm.create_model(
+            "hf-hub:paige-ai/Virchow2",
+            pretrained=True,
+            mlp_layer=SwiGLUPacked,
+            act_layer=_torch.nn.SiLU,
+        ).to(dev)
+        pool: Literal["cls", "cls_mean"] = "cls" if backbone_name == "virchow2_cls" else "cls_mean"
+        backbone = Virchow2Wrapper(base=base, pool=pool).to(dev)
+        return _freeze(backbone)
+
+    raise ValueError(f"Unknown backbone_name: {backbone_name!r}")
 
 
 class DefaultMLPAdapter(nn.Module):

@@ -22,6 +22,7 @@ class ProcessingConfig:
 
     resize_hw: Tuple[int, int] = (98, 98)
     cast_float32: bool = True
+    imagenet_normalize: bool = False
     extra_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None
     sklearn_transformer: Any = None
 
@@ -47,6 +48,7 @@ class ModelConfig:
     """
 
     backbone_name: str = "dinov2_vits14"
+    use_fp16: bool = False
     adapter: ModuleSpec = field(
         default_factory=lambda: ModuleSpec(enabled=True, module_cls=None, module_kwargs=None)
     )
