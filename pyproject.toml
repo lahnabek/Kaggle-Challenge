@@ -1,0 +1,24 @@
+[project]
+name = "mva-kaggle-pathology"
+version = "0.1.0"
+dependencies = [
+    "h5py>=3.8",
+    "huggingface-hub>=0.20",
+    "numpy>=1.23",
+    "pandas>=1.5",
+    "pillow>=9.5",
+    "scikit-learn>=1.2",
+    "timm>=0.9.11",
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "tqdm>=4.66",
+]
+
+[[tool.uv.index]]
+name = "pytorch-gpu"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-gpu" }
+torchvision = { index = "pytorch-gpu" }
