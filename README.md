@@ -21,59 +21,62 @@ uv run python -m ipykernel install --user --name "mva-spine" --display-name "Spi
 
 #If you ever add a new library (e.g., pandas). This automatically updates pyproject.toml and your environment
 uv add pandas 
+```
 
+## Data
 
-## Donnees
+- Data in `.h5` format is not available on GitHub.
+- You must therefore download these data files separately in order to run the full pipeline.
 
-- Les donnees en format `.h5` ne sont pas presentes sur GitHub.
-- Il faut donc recuperer ces fichiers de donnees separement pour pouvoir executer le pipeline complet.
-
-## Notebooks du projet
+## Project Notebooks
 
 ### `getting_started.ipynb`
 
-- Notebook fourni par les profs.
-- Je ne l'ai pas modifie.
-- Je l'ai seulement execute une fois pour verifier que tout fonctionne.
+- Notebook provided by the instructors.
+- I haven’t modified it.
+- I only ran it once to verify that everything works.
 
 ### `MVA_DLMI_adapters.ipynb`
 
-- TD corrige (support de reference).
-- Sert surtout a s'inspirer de la methode, de la structure et des idees.
+- Corrected lab (reference material).
+- Mainly serves as a source of inspiration for the method, structure, and ideas.
 
 ### `TP-validation_teacher-version.ipynb`
 
-- Autre notebook corrige / version enseignant.
-- Utile comme base de comparaison ou pour verifier des choix techniques.
+- Another corrected notebook / teacher version.
+- Useful as a basis for comparison or to verify technical choices.
 
 ### `explore_data.ipynb`
 
-- Notebook que j'ai fait pour me familiariser avec les donnees.
-- Objectif: explorer le dataset, observer des exemples et verifier des points de preprocessing.
-- Il sert a comprendre "ce qu'il se passe" avant de coder le pipeline principal.
-- Contenu detaille:
-  - configuration/imports et verification que les fichiers attendus sont presents;
-  - inspection de la structure HDF5 (comment sont stockes les patches et labels);
-  - creation d'une table recap par patch pour faciliter l'analyse;
-  - synthese quantitative globale (comptages, repartitions);
-  - graphiques d'equilibre des classes et de repartition par centre;
-  - analyse des pixels sur un sous-echantillon:
-    - histogrammes d'intensite par canal,
-    - correlations entre canaux,
-    - effet d'une normalisation z-score par patch,
-    - recherche des patches les plus clairs / plus sombres;
-  - comparaison du profil moyen des canaux entre validation et centres du train;
-  - visualisations qualitatives:
-    - une image par couple (centre, label) pour train/val,
-    - grille aleatoire sur le domaine test.
-- En pratique, ce notebook sert a:
-  - verifier qu'il n'y a pas d'incoherence evidente dans les donnees;
-  - guider les choix de preprocessing/augmentation avant l'entrainement;
-  - documenter les intuitions sur le shift de domaine et l'equilibre des classes.
+- Notebook I created to familiarize myself with the data.
+- Objective: explore the dataset, examine examples, and verify preprocessing steps.
+- It helps understand “what is happening” before coding the main pipeline.
+- Detailed contents:
+  - configuration/imports and verification that the expected files are present;
+  - inspection of the HDF5 structure (how patches and labels are stored);
+  - creation of a summary table per patch to facilitate analysis;
+  - overall quantitative summary (counts, distributions);
+  - class balance and distribution by center plots;
+  - pixel analysis on a subsample:
+    - intensity histograms by channel,
+    - correlations between channels,
+    - effect of z-score normalization per patch,
+    - identification of the brightest/darkest patches;
+  - comparison of the average channel profile between validation and training centers;
+  - qualitative visualizations:
+    - one image per pair (center, label) for training/validation,
+    - random grid on the test domain.
+- In practice, this notebook is used to:
+  - verify that there are no obvious inconsistencies in the data;
+  - guide preprocessing/data augmentation choices before training;
+  - document insights regarding domain shift and class balance.
 
 ### `my_pipeline.ipynb`
 
-- Notebook principal du projet.
-- C'est ici qu'on va travailler, tester et faire evoluer la solution.
-- C'est un "experiment runner" centre sur DINOv2 + adapters.
-- tout ce qui est necessaire a son fonctionnmeent se trouve dans utils (changement pour pouvoir travailler avec plusieurs workers)
+- Main notebook for the project.
+- This is where we will work on, test, and refine the solution.
+- It is an “experiment runner” centered on DINOv2 + adapters.
+- Everything needed for its operation is located in `utils` (modified to support multiple workers).
+
+
+Translated with DeepL.com (free version)
