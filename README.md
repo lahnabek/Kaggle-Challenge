@@ -2,6 +2,27 @@
 
 Ce README explique rapidement a quoi sert chaque notebook du depot pour que ce soit simple a reprendre.
 
+This project uses `uv` for lightning-fast, reproducible dependency management.
+
+## 1. Environment Setup
+
+Make sure you have `uv` installed ([installation guide](https://docs.astral.sh/uv/getting-started/installation/)).
+From the project root, run:
+
+```bash
+# Install dependencies and create the virtual environment
+uv sync
+
+# Activate the environment
+source .venv/bin/activate
+
+#Add the kernel in case it doesn't show up automatically
+uv run python -m ipykernel install --user --name "mva-spine" --display-name "Spine-Project (.venv)"
+
+#If you ever add a new library (e.g., pandas). This automatically updates pyproject.toml and your environment
+uv add pandas 
+
+
 ## Donnees
 
 - Les donnees en format `.h5` ne sont pas presentes sur GitHub.
