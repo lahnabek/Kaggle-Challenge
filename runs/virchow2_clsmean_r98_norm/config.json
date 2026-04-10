@@ -1,0 +1,52 @@
+{
+  "run_name": "virchow2_clsmean_r98_norm",
+  "seeds": [
+    0
+  ],
+  "processing": {
+    "resize_hw": [
+      98,
+      98
+    ],
+    "cast_float32": true,
+    "imagenet_normalize": true,
+    "extra_transform": null,
+    "sklearn_transformer": null
+  },
+  "model": {
+    "backbone_name": "virchow2_clsmean",
+    "use_fp16": true,
+    "adapter": {
+      "enabled": false,
+      "module_cls": null,
+      "module_kwargs": null
+    },
+    "head": {
+      "enabled": true,
+      "module_cls": "DefaultBinaryHead",
+      "module_kwargs": {}
+    }
+  },
+  "train": {
+    "batch_size": 16,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "num_epochs": 100,
+    "early_stopping": {
+      "monitor": "val_loss",
+      "mode": "min",
+      "patience": 10,
+      "min_delta": 0.0
+    },
+    "use_center_balanced_batches": false,
+    "center_proportions": null,
+    "num_workers": 2,
+    "drop_last": true
+  },
+  "do_predict_test": false,
+  "predict_threshold": 0.5,
+  "outlier_params": null,
+  "outlier_scan_workers": 4,
+  "outlier_scan_batch_size": 256,
+  "data_fraction": null
+}

@@ -1,0 +1,11 @@
+{
+  "method": "method_c_color_texture_grid_cfg8",
+  "split": "test",
+  "n_total": 85054,
+  "n_outliers": 30,
+  "outlier_ratio": 0.0003527170973734333,
+  "score_mean": 0.0002281627772440209,
+  "score_std": 0.0191175624530093,
+  "score_q95": 0.0,
+  "score_q99": 0.0
+}

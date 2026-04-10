@@ -1,0 +1,57 @@
+{
+  "run_name": "baseline_balanced_outliers",
+  "seeds": [
+    0
+  ],
+  "processing": {
+    "resize_hw": [
+      98,
+      98
+    ],
+    "cast_float32": true,
+    "extra_transform": null,
+    "sklearn_transformer": null
+  },
+  "model": {
+    "backbone_name": "dinov2_vits14",
+    "adapter": {
+      "enabled": false,
+      "module_cls": null,
+      "module_kwargs": null
+    },
+    "head": {
+      "enabled": true,
+      "module_cls": "DefaultBinaryHead",
+      "module_kwargs": {}
+    }
+  },
+  "train": {
+    "batch_size": 16,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "num_epochs": 100,
+    "early_stopping": {
+      "monitor": "val_loss",
+      "mode": "min",
+      "patience": 10,
+      "min_delta": 0.0
+    },
+    "use_center_balanced_batches": true,
+    "center_proportions": null,
+    "num_workers": 8,
+    "drop_last": true
+  },
+  "do_predict_test": true,
+  "predict_threshold": 0.5,
+  "outlier_params": {
+    "min_sat_mean": 0.03,
+    "min_colorfulness": 0.03,
+    "min_grad_energy": 0.005,
+    "white_gray_min": 0.86,
+    "white_max_sat": 0.28,
+    "max_white_frac": 0.8
+  },
+  "outlier_scan_workers": 8,
+  "outlier_scan_batch_size": 1000,
+  "data_fraction": null
+}
